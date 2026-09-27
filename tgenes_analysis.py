@@ -198,3 +198,4 @@ def analyze_tgenes(tissue: str, tissue_folder: str):
 
 if __name__ == '__main__':
     analyze_tgenes('GBM', '6. TCGA-GBM')
+    analyze_tgenes('PRAD', '2. TCGA-PRAD')
