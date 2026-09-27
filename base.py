@@ -5,8 +5,11 @@ import scipy.cluster.hierarchy as sch
 
 from pathlib import Path
 from scipy.stats import gmean
-from typing import List, Optional
 from upsetplot import UpSet, from_indicators
+
+from utils import load_tcga_data, load_pathways, intersect_data_pathway, ge2pe_fast, binarize_data, get_row_genes, get_ensembl_from_gene_name
+from tgenes import get_tgenes
+from ngenes import get_ngenes
 
 
 TCGA_FOLDER = Path('../TCGA-DATA')
@@ -36,162 +39,32 @@ TISSUES = {
 }
 
 
-def load_tcga_data(data_path: str | Path) -> pd.DataFrame:
-    sample_path = data_path / 'sample.xls'
-    data_path = data_path / 'data'
-
-    sample = pd.read_excel(sample_path)
-    normal_mask = sample['Sample Type'] == 'Solid Tissue Normal'
-
-    # Loading one data file
-    def get_data(row: pd.Series) -> pd.Series:
-        filename = row['File Name']
-        file = pd.read_table(data_path / filename, names=['gene_id', 'value'])
-        return file['value']
-
-    data = sample.apply(get_data, axis=1)
-    
-    filename_0 = sample['File Name'][0]
-    file_0 = pd.read_table(data_path / filename_0, names=['gene_id', 'value'])
-    gene_id = file_0.gene_id
-    gene_id = np.vectorize(lambda x: x.split('.')[0])(gene_id)
-    sample_id = sample['Sample ID']
-
-    data.index = sample_id
-    data.columns = gene_id
-    normal_mask.index = sample_id
-
-    return data, normal_mask
-
-
-def get_ngenes(data, normal_mask, threshold=0.05, padding=0.1):
-    normal_data = data[normal_mask]
-    tumor_data = data[~normal_mask]
-    tumor_min, tumor_max = tumor_data.min(), tumor_data.max()
-    n_normal = normal_data.shape[0]
-
-    f_bellow = (normal_data < tumor_min - padding).sum() / n_normal
-    f_above = (normal_data > tumor_max + padding).sum() / n_normal
-
-    ibellow, = np.where(f_bellow > threshold)
-    iabove, = np.where(f_above > threshold)
-
-    genes_above_set = set(data.columns[iabove])
-    genes_bellow_set = set(data.columns[ibellow])
-
-    # Classify genes according to Mathematica logic
-    genes_both = np.array(list(genes_above_set & genes_bellow_set))  # "no"
-    genes_above_only = np.array(list(genes_above_set - genes_both))  # "na"
-    genes_bellow_only = np.array(list(genes_bellow_set - genes_both))  # "nb"
-
-    genes_above, max_above = data.columns[iabove], tumor_max.iloc[iabove]
-    genes_bellow, min_bellow = data.columns[ibellow], tumor_min.iloc[ibellow]
-    ngenes = np.array(list(genes_above_set | genes_bellow_set))
-    ndata = normal_data[ngenes]
-
-    return ndata, ngenes, genes_above, genes_bellow, max_above, min_bellow, genes_above_only, genes_both, genes_bellow_only
-
-
-def get_tgenes(data, normal_mask, threshold=0.1, padding=0.1):
-    normal_data = data[normal_mask]
-    tumor_data = data[~normal_mask]
-    normal_min, normal_max = normal_data.min(), normal_data.max()
-    n_tumor = tumor_data.shape[0]
-
-    f_bellow = (tumor_data < normal_min - padding).sum() / n_tumor
-    f_above = (tumor_data > normal_max + padding).sum() / n_tumor
-
-    ibellow, = np.where(f_bellow > threshold)
-    iabove, = np.where(f_above > threshold)
-
-    genes_above_set = set(data.columns[iabove])
-    genes_bellow_set = set(data.columns[ibellow])
-
-    # Classify genes according to Mathematica logic
-    genes_both = np.array(list(genes_above_set & genes_bellow_set))  # "to"
-    genes_above_only = np.array(list(genes_above_set - genes_both))  # "ta"
-    genes_bellow_only = np.array(list(genes_bellow_set - genes_both))  # "tb"
-
-    genes_above, max_above = data.columns[iabove], normal_max.iloc[iabove]
-    genes_bellow, min_bellow = data.columns[ibellow], normal_min.iloc[ibellow]
-    tgenes = np.array(list(genes_above_set | genes_bellow_set))
-    tdata = tumor_data[tgenes]
-
-    return tdata, tgenes, genes_above, genes_bellow, max_above, min_bellow, genes_above_only, genes_both, genes_bellow_only
-
-
-def binarize_data(tdata, genes_above, genes_bellow, max_above, min_bellow):
-    bin_data = pd.DataFrame(0, columns=tdata.columns, index=tdata.index)
-    bin_data.loc[:, genes_above] = (tdata[genes_above] > max_above).astype(int)
-    bin_data.loc[:, genes_bellow] = (tdata[genes_bellow] < min_bellow).astype(int)
-    
-    return bin_data
-
-
-def load_pathways():
-    path = EXT_FOLDER / Path('pathways/All_pathways.csv')
-    pathways = pd.read_csv(path, names=['Gene', 'Pathway'])
-    return pathways
-
-
-def intersect_data_pathway(bin_data, pathways, tgenes):
-    pw_genes = pathways.Gene.unique()
-    common_genes = np.intersect1d(pw_genes, tgenes)
-    bin_data = bin_data[common_genes]
-    pathways = pathways[pathways.Gene.isin(common_genes)]
-
-    return bin_data, pathways, common_genes
-
-
-def ge2pe_fast(df_expr, pathways, mode="proportion"):
-    pathways_unique = pathways.drop_duplicates(subset=['Gene', 'Pathway'])
-    
-    pathway_matrix = pd.crosstab(pathways_unique['Gene'], pathways_unique['Pathway'])
-    
-    df_pathway = df_expr.dot(pathway_matrix)
-    
-    if mode == "presence":
-        df_pathway = (df_pathway > 0).astype(int)
-    elif mode == "proportion":
-        pw_count = pathway_matrix.sum(axis=0)
-        df_pathway = df_pathway.divide(pw_count)
-    
-    return df_pathway
-
-
-def get_row_genes():
-    row_genes_path = Path('../TCGA-DATA/rows_genes2.xlsx')
-    rg = pd.read_excel(row_genes_path)
-    return rg
-
-
-def get_gene_name_from_ensembl(rg: pd.DataFrame, ensembl_list: List | np.ndarray):
-    return rg.set_index('ensembl').loc[ensembl_list].gene_symbol.to_numpy()
-
-
-def get_ensembl_from_gene_name(rg: pd.DataFrame, gene_list: List | np.ndarray):
-    return rg.set_index('gene_symbol').loc[gene_list].ensembl.to_numpy()
-
-
 def main():
     pass
 
 
 if __name__ == '__main__':
-#     main()
-# else:
     tissue, tissue_folder = 'GBM', '6. TCGA-GBM'
     # tissue, tissue_folder = 'PRAD', '2. TCGA-PRAD'
     OUT_FOLDER = Path('figures and tables') / (tissue + '_heberferon')
     OUT_FOLDER.mkdir(exist_ok=True, parents=True)
     data_path = TCGA_FOLDER / tissue_folder
     data, normal_mask = load_tcga_data(data_path)
+
+    # Get T-genes and N-genes
     (
         tdata, tgenes,
-        genes_above, genes_bellow,
-        max_above, min_bellow,
-        genes_above_only, genes_both, genes_bellow_only) = get_tgenes(data, normal_mask)
+        tgenes_above, tgenes_bellow,
+        tgenes_max_above, tgenes_min_bellow,
+        tgenes_above_only, tgenes_both, tgenes_bellow_only) = get_tgenes(data, normal_mask)
 
+    (
+        ndata, ngenes,
+        ngenes_above, ngenes_bellow,
+        ngenes_max_above, ngenes_min_bellow,
+        ngenes_above_only, ngenes_both, ngenes_bellow_only) = get_ngenes(data, normal_mask)
+
+    # Calculate fold change
     normal = data[normal_mask][tgenes] + 0.1
     tumor = data[~normal_mask][tgenes] + 0.1
 
@@ -199,13 +72,12 @@ if __name__ == '__main__':
     tcga_fc = np.log2(tumor/ref)
     tcga_mean_fc = tcga_fc.mean()
 
-    rg = get_row_genes()
+    rg = get_row_genes(Path('../TCGA-DATA/rows_genes2.xlsx'))
 
     hbrf = pd.read_table(EXT_FOLDER / 'GSE214832' / 'GSE214832.top.table.tsv')
     hbrf_gene_set = set(hbrf['Gene.symbol'].dropna().drop_duplicates().to_list())
     gene_rg_set = set(rg.gene_symbol.dropna().drop_duplicates().to_list())
     hbrf_gene_set = hbrf_gene_set.intersection(gene_rg_set)
-    # hbrf_ens_list = get_ensembl_from_gene_name(rg, list(hbrf_gene_set))
     hbrf_logfc = hbrf.dropna(subset=['Gene.symbol']).groupby('Gene.symbol').logFC.mean()
     hbrf_logfc = hbrf_logfc[hbrf_logfc.index.isin(list(hbrf_gene_set))]
     hbrf_logfc.index = get_ensembl_from_gene_name(rg, hbrf_logfc.index)
@@ -234,11 +106,13 @@ if __name__ == '__main__':
 
     # --------------------------------------------------------------------------
 
-    bin_data = binarize_data(tdata, genes_above, genes_bellow, max_above, min_bellow)
-    pathways = load_pathways()
+    bin_tdata = binarize_data(tdata, tgenes_above, tgenes_bellow, tgenes_max_above, tgenes_min_bellow)
+    bin_ndata = binarize_data(ndata, ngenes_above, ngenes_bellow, ngenes_max_above, ngenes_min_bellow)
+
+    pathways = load_pathways(EXT_FOLDER / 'pathways/All_pathways.csv')
     pathways_ = pathways.copy()
-    bin_data, pathways, common_genes = intersect_data_pathway(bin_data, pathways, tgenes)
-    bin_data_mean = bin_data.mean()
+    bin_tdata, pathways, common_genes = intersect_data_pathway(bin_tdata, pathways, tgenes)
+    bin_data_mean = bin_tdata.mean()
 
     ens_common = np.intersect1d(hbrf_logfc.index, bin_data_mean.index)
     tcga_mean_fc2 = tcga_mean_fc[ens_common].copy()
@@ -279,7 +153,6 @@ if __name__ == '__main__':
     df = df.dropna(subset=['tcga'])
     args = np.argsort(-df.difference.abs())
     df = df.iloc[args]
-    # df = df.sort_values(by='difference', ascending=False)
     df.to_csv(OUT_FOLDER / 'pathways_heberferon.csv')
 
     # --------------------------------------------------------------------------
