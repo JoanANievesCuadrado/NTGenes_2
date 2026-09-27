@@ -64,6 +64,34 @@ def load_tcga_data(data_path: str | Path) -> pd.DataFrame:
     return data, normal_mask
 
 
+def get_ngenes(data, normal_mask):
+    normal_data = data[normal_mask]
+    tumor_data = data[~normal_mask]
+    tumor_min, tumor_max = tumor_data.min(), tumor_data.max()
+    n_normal = normal_data.shape[0]
+
+    f_bellow = (normal_data < tumor_min - 0.1).sum() / n_normal
+    f_above = (normal_data > tumor_max + 0.1).sum() / n_normal
+
+    ibellow, = np.where(f_bellow > 0.05)
+    iabove, = np.where(f_above > 0.05)
+
+    genes_above_set = set(data.columns[iabove])
+    genes_bellow_set = set(data.columns[ibellow])
+
+    # Classify genes according to Mathematica logic
+    genes_both = np.array(list(genes_above_set & genes_bellow_set))  # "no"
+    genes_above_only = np.array(list(genes_above_set - genes_both))  # "na"
+    genes_bellow_only = np.array(list(genes_bellow_set - genes_both))  # "nb"
+
+    genes_above, max_above = data.columns[iabove], tumor_max.iloc[iabove]
+    genes_bellow, min_bellow = data.columns[ibellow], tumor_min.iloc[ibellow]
+    ngenes = np.array(list(genes_above_set | genes_bellow_set))
+    ndata = normal_data[ngenes]
+
+    return ndata, ngenes, genes_above, genes_bellow, max_above, min_bellow, genes_above_only, genes_both, genes_bellow_only
+
+
 def get_tgenes(data, normal_mask):
     normal_data = data[normal_mask]
     tumor_data = data[~normal_mask]
