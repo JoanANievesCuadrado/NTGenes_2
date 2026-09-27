@@ -76,12 +76,20 @@ def get_tgenes(data, normal_mask):
     ibellow, = np.where(f_bellow > 0.1)
     iabove, = np.where(f_above > 0.1)
 
+    genes_above_set = set(data.columns[iabove])
+    genes_bellow_set = set(data.columns[ibellow])
+
+    # Classify genes according to Mathematica logic
+    genes_both = np.array(list(genes_above_set & genes_bellow_set))  # "to"
+    genes_above_only = np.array(list(genes_above_set - genes_both))  # "ta"
+    genes_bellow_only = np.array(list(genes_bellow_set - genes_both))  # "tb"
+
     genes_above, max_above = data.columns[iabove], normal_max.iloc[iabove]
     genes_bellow, min_bellow = data.columns[ibellow], normal_min.iloc[ibellow]
-    tgenes = np.array(list(set(genes_above) | set(genes_bellow)))
+    tgenes = np.array(list(genes_above_set | genes_bellow_set))
     tdata = tumor_data[tgenes]
 
-    return tdata, tgenes, genes_above, genes_bellow, max_above, min_bellow
+    return tdata, tgenes, genes_above, genes_bellow, max_above, min_bellow, genes_above_only, genes_both, genes_bellow_only
 
 
 def binarize_data(tdata, genes_above, genes_bellow, max_above, min_bellow):
@@ -153,7 +161,8 @@ if __name__ == '__main__':
     (
         tdata, tgenes,
         genes_above, genes_bellow,
-        max_above, min_bellow) = get_tgenes(data, normal_mask)
+        max_above, min_bellow,
+        genes_above_only, genes_both, genes_bellow_only) = get_tgenes(data, normal_mask)
 
     normal = data[normal_mask][tgenes] + 0.1
     tumor = data[~normal_mask][tgenes] + 0.1
