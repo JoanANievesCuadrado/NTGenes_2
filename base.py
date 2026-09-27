@@ -64,17 +64,17 @@ def load_tcga_data(data_path: str | Path) -> pd.DataFrame:
     return data, normal_mask
 
 
-def get_ngenes(data, normal_mask):
+def get_ngenes(data, normal_mask, threshold=0.05, padding=0.1):
     normal_data = data[normal_mask]
     tumor_data = data[~normal_mask]
     tumor_min, tumor_max = tumor_data.min(), tumor_data.max()
     n_normal = normal_data.shape[0]
 
-    f_bellow = (normal_data < tumor_min - 0.1).sum() / n_normal
-    f_above = (normal_data > tumor_max + 0.1).sum() / n_normal
+    f_bellow = (normal_data < tumor_min - padding).sum() / n_normal
+    f_above = (normal_data > tumor_max + padding).sum() / n_normal
 
-    ibellow, = np.where(f_bellow > 0.05)
-    iabove, = np.where(f_above > 0.05)
+    ibellow, = np.where(f_bellow > threshold)
+    iabove, = np.where(f_above > threshold)
 
     genes_above_set = set(data.columns[iabove])
     genes_bellow_set = set(data.columns[ibellow])
@@ -92,17 +92,17 @@ def get_ngenes(data, normal_mask):
     return ndata, ngenes, genes_above, genes_bellow, max_above, min_bellow, genes_above_only, genes_both, genes_bellow_only
 
 
-def get_tgenes(data, normal_mask):
+def get_tgenes(data, normal_mask, threshold=0.1, padding=0.1):
     normal_data = data[normal_mask]
     tumor_data = data[~normal_mask]
     normal_min, normal_max = normal_data.min(), normal_data.max()
     n_tumor = tumor_data.shape[0]
 
-    f_bellow = (tumor_data < normal_min - 0.1).sum() / n_tumor
-    f_above = (tumor_data > normal_max + 0.1).sum() / n_tumor
+    f_bellow = (tumor_data < normal_min - padding).sum() / n_tumor
+    f_above = (tumor_data > normal_max + padding).sum() / n_tumor
 
-    ibellow, = np.where(f_bellow > 0.1)
-    iabove, = np.where(f_above > 0.1)
+    ibellow, = np.where(f_bellow > threshold)
+    iabove, = np.where(f_above > threshold)
 
     genes_above_set = set(data.columns[iabove])
     genes_bellow_set = set(data.columns[ibellow])
