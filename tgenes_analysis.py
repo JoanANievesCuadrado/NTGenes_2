@@ -193,8 +193,11 @@ def _plot_distance_components(components, tissue, output_dir):
         name='± 1 std',
     ))
 
-    for sample in components.index:
-        values = components.loc[sample]
+    # Positional access: sample ids are not unique in TCGA, and .loc on a
+    # repeated label hands back a frame instead of that sample's row.
+    for i in range(len(components)):
+        sample = components.index[i]
+        values = components.iloc[i]
         fig.add_trace(go.Scattergl(
             x=values.to_numpy(),
             y=ranks,
