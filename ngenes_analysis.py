@@ -224,6 +224,7 @@ def _plot_distance_components(components, tissue, output_dir):
         template='plotly_white',
         width=1100,
         height=900,
+        showlegend=False,
     )
 
     fig.write_html(output_dir / 'normal_distance_components.html')
@@ -312,7 +313,7 @@ def _create_and_save_plot(sorted_pathways, sorted_freq, sorted_std, hover_text, 
         template='plotly_white',
         width=1400,
         height=600,
-        showlegend=True
+        showlegend=False
     )
 
     fig.write_html(output_dir / 'pathway_distribution.html')
