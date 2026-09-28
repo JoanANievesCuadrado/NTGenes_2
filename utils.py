@@ -7,11 +7,29 @@ from typing import List
 
 
 def load_tcga_data(data_path: str | Path) -> tuple:
-    """Load TCGA data and return expression matrix with sample type mask."""
+    """Load TCGA data and return expression matrix with sample type mask.
+
+    Samples listed in sample.xls whose expression file is not on disk are
+    reported and dropped, so an incomplete download still yields the samples
+    it does have.
+    """
+    data_path = Path(data_path)
     sample_path = data_path / 'sample.xls'
     data_path = data_path / 'data'
 
     sample = pd.read_excel(sample_path)
+
+    found = sample['File Name'].map(lambda name: (data_path / name).is_file())
+    if not found.all():
+        missing = sample.loc[~found, 'File Name']
+        print(f"Skipping {len(missing)} of {len(sample)} samples with no expression file:")
+        for name in missing:
+            print(f"  - {name}")
+        sample = sample[found].reset_index(drop=True)
+
+    if sample.empty:
+        raise FileNotFoundError(f"No expression files found in {data_path}")
+
     normal_mask = sample['Sample Type'] == 'Solid Tissue Normal'
 
     def get_data(row: pd.Series) -> pd.Series:
@@ -21,7 +39,7 @@ def load_tcga_data(data_path: str | Path) -> tuple:
 
     data = sample.apply(get_data, axis=1)
 
-    filename_0 = sample['File Name'][0]
+    filename_0 = sample['File Name'].iloc[0]
     file_0 = pd.read_table(data_path / filename_0, names=['gene_id', 'value'])
     gene_id = file_0.gene_id
     gene_id = np.vectorize(lambda x: x.split('.')[0])(gene_id)
