@@ -12,10 +12,13 @@ exactly the same samples, so they can be read side by side.
 
 import re
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import scipy.cluster.hierarchy as sch
 
+from matplotlib.colors import to_hex
 from pathlib import Path
 from scipy.stats import gmean
 
@@ -183,6 +186,47 @@ def _sample_activation(data_path):
         'active_tgenes': active_tgenes.to_numpy(),
         'active_pathways': active_pathways.to_numpy(),
     }, index=pw_tumor.index), len(tgenes), pw_tumor.shape[1], context
+
+
+def _dendrogram(pw_data, tissue, output_dir, color_threshold=None):
+    """Ward dendrogram over the pathway vector of every sample.
+
+    Returns the colour scipy gave each sample, ordered by the rows of
+    ``pw_data``. The dendrogram reports its leaves in drawing order, so
+    ``leaves[k]`` names the sample drawn at position k and
+    ``leaves_color_list[k]`` is that leaf's colour; the two have to be zipped
+    back together to recover a per-sample colour.
+    """
+    linkage_matrix = sch.linkage(pw_data, method='ward')
+
+    fig_height = 4
+    fig_width = fig_height * 1.618
+    fontsize = 11.5
+
+    plt.figure(figsize=(fig_width, fig_height))
+    dendro = sch.dendrogram(linkage_matrix, no_labels=True,
+                            color_threshold=color_threshold)
+    plt.ylabel('Distances', fontsize=fontsize)
+    plt.xlabel('Samples', fontsize=fontsize)
+    plt.title(tissue)
+    plt.xticks(fontsize=fontsize)
+    plt.yticks(fontsize=fontsize)
+    plt.tight_layout()
+    plt.savefig(output_dir / 'pathway_dendrogram.pdf')
+    plt.close()
+    print("Saved: pathway_dendrogram.pdf")
+
+    # scipy names colours through the matplotlib cycle ("C0", "C1", ...), which
+    # plotly cannot read, so resolve them to hex here.
+    colors = np.empty(pw_data.shape[0], dtype=object)
+    for position, sample in enumerate(dendro['leaves']):
+        colors[sample] = to_hex(dendro['leaves_color_list'][position])
+
+    counts = pd.Series(colors).value_counts()
+    print(f"Dendrogram: {len(counts)} leaf colours over {len(colors)} samples "
+          f"({', '.join(f'{c}:{n}' for c, n in counts.items())})")
+
+    return colors
 
 
 def _save_gene_frequency(context, gene_labels, output_dir, filename):
@@ -376,19 +420,23 @@ def analyze_activation_vs_distance(tissue: str, tissue_folder: str):
     _save_least_active(df, 'active_tgenes', context, gene_labels, output_dir)
     print()
 
+    # Cluster the samples on their pathway vectors; the leaf colours carry over
+    # to the two fold-change plots so the same sample keeps the same colour.
+    cluster_colors = _dendrogram(context['pw_data'], tissue, output_dir, 55)
+
     _plot_activation(df, 'gene_distance', 'active_tgenes', total_tgenes,
                      'Activated T-genes', 'gene',
                      tissue, output_dir, 'distance_vs_active_tgenes', '#00A6D6')
 
     _plot_activation(df, 'all_genes_distance', 'active_tgenes', total_tgenes,
                      'Activated T-genes', 'all-gene log fold change',
-                     tissue, output_dir, 'distance_vs_active_tgenes_all_genes', '#FF7F0E',
-                     log_y=True)
+                     tissue, output_dir, 'distance_vs_active_tgenes_all_genes',
+                     cluster_colors, log_y=True)
 
     _plot_activation(df, 'all_genes_distance', 'active_pathways', total_pathways,
                      'Activated pathways', 'all-gene log fold change',
-                     tissue, output_dir, 'distance_vs_active_pathways_all_genes', '#8C564B',
-                     log_y=True)
+                     tissue, output_dir, 'distance_vs_active_pathways_all_genes',
+                     cluster_colors, log_y=True)
 
     _plot_activation(df, 'pathway_distance', 'active_pathways', total_pathways,
                      'Activated pathways', 'pathway',
