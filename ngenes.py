@@ -34,12 +34,12 @@ def get_ngenes(data: pd.DataFrame, normal_mask: np.ndarray,
 
     # Padded tumor range: these are the thresholds used both to select the
     # N-genes and later to binarize the data, so they must be the same values.
-    tumor_min = tumor_data.min() - padding
-    tumor_max = tumor_data.max() + padding
+    tumor_min = tumor_data.min()
+    tumor_max = tumor_data.max()
     n_normal = normal_data.shape[0]
 
-    f_bellow = (normal_data < tumor_min).sum() / n_normal
-    f_above = (normal_data > tumor_max).sum() / n_normal
+    f_bellow = (normal_data < tumor_min - padding).sum() / n_normal
+    f_above = (normal_data > tumor_max + padding).sum() / n_normal
 
     ibellow, = np.where(f_bellow > threshold)
     iabove, = np.where(f_above > threshold)

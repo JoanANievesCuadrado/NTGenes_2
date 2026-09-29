@@ -34,12 +34,12 @@ def get_tgenes(data: pd.DataFrame, normal_mask: np.ndarray,
 
     # Padded normal range: these are the thresholds used both to select the
     # T-genes and later to binarize the data, so they must be the same values.
-    normal_min = normal_data.min() - padding
-    normal_max = normal_data.max() + padding
+    normal_min = normal_data.min()
+    normal_max = normal_data.max()
     n_tumor = tumor_data.shape[0]
 
-    f_bellow = (tumor_data < normal_min).sum() / n_tumor
-    f_above = (tumor_data > normal_max).sum() / n_tumor
+    f_bellow = (tumor_data < normal_min - padding).sum() / n_tumor
+    f_above = (tumor_data > normal_max + padding).sum() / n_tumor
 
     ibellow, = np.where(f_bellow > threshold)
     iabove, = np.where(f_above > threshold)
